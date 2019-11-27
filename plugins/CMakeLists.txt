@@ -87,3 +87,7 @@ endif()
 if(BUILD_PLUGIN_E57)
     add_subdirectory(e57)
 endif()
+
+if(BUILD_PLUGIN_Z5)
+    add_subdirectory(z5)
+endif(BUILD_PLUGIN_Z5)
