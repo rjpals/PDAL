@@ -45,9 +45,9 @@
 
 #include <pdal/GDALUtils.hpp>
 #include <pdal/SrsBounds.hpp>
+#include <pdal/compression/ZstdCompression.hpp>
 #include <pdal/util/Algorithm.hpp>
 #include "../filters/CropFilter.hpp"
-#include "../filters/private/pnp/GridPnp.hpp"
 
 namespace pdal
 {
@@ -280,12 +280,6 @@ void EptReader::initialize()
     }
     m_args->m_polys = std::move(exploded);
 
-    for (auto& p : m_args->m_polys)
-    {
-        m_queryGrids.emplace_back(
-            new GridPnp(p.exteriorRing(), p.interiorRings()));
-    }
-
     try
     {
         handleOriginQuery();
@@ -447,7 +441,7 @@ QuickInfo EptReader::inspect()
 
         // If we've passed a spatial query, determine an upper bound on the
         // point count.
-        if (!m_queryBounds.contains(fullBounds) || m_queryGrids.size())
+        if (!m_queryBounds.contains(fullBounds) || m_args->m_polys.size())
         {
             log()->get(LogLevel::Debug) <<
                 "Determining overlapping point count" << std::endl;
@@ -710,9 +704,16 @@ void EptReader::overlaps(const arbiter::Endpoint& ep,
 
 PointViewSet EptReader::run(PointViewPtr view)
 {
+#ifndef PDAL_HAVE_ZSTD
+    if (m_info->dataType() == EptInfo::DataType::Zstandard)
+        throwError("Cannot read Zstandard dataType: "
+            "PDAL must be configured with WITH_ZSTD=On");
+#endif
+
     // Start these at 1 to differentiate from points added by other stages,
     // which will be ignored by the EPT writer.
     uint64_t nodeId(1);
+
     for (const auto& entry : m_overlaps)
     {
         const Key& key(entry.first);
@@ -726,8 +727,14 @@ PointViewSet EptReader::run(PointViewPtr view)
 
             if (m_info->dataType() == EptInfo::DataType::Laszip)
                 startId = readLaszip(*view, key, nodeId);
-            else
+            else if (m_info->dataType() == EptInfo::DataType::Binary)
                 startId = readBinary(*view, key, nodeId);
+#ifdef PDAL_HAVE_ZSTD
+            else if (m_info->dataType() == EptInfo::DataType::Zstandard)
+                startId = readZstandard(*view, key, nodeId);
+#endif
+            else
+                throw ept_error("Unrecognized EPT dataType");
 
             // Read addon information after the native data, we'll possibly
             // overwrite attributes.
@@ -788,18 +795,15 @@ PointId EptReader::readLaszip(PointView& dst, const Key& key,
     return startId;
 }
 
-PointId EptReader::readBinary(PointView& dst, const Key& key,
-        const uint64_t nodeId) const
+PointId EptReader::processPackedData(PointView& dst, const uint64_t nodeId,
+    char* data, const uint64_t size) const
 {
-    auto data(getBinary("ept-data/" + key.toString() + ".bin"));
-    ShallowPointTable table(*m_remoteLayout, data.data(), data.size());
+    ShallowPointTable table(*m_remoteLayout, data, size);
     PointRef pr(table);
 
     std::lock_guard<std::mutex> lock(m_mutex);
 
     const PointId startId(dst.size());
-
-    PointId pointId(0);
     for (PointId pointId(0); pointId < table.numPoints(); ++pointId)
     {
         pr.setPointId(pointId);
@@ -808,6 +812,29 @@ PointId EptReader::readBinary(PointView& dst, const Key& key,
 
     return startId;
 }
+
+PointId EptReader::readBinary(PointView& dst, const Key& key,
+        const uint64_t nodeId) const
+{
+    auto data(getBinary("ept-data/" + key.toString() + ".bin"));
+    return processPackedData(dst, nodeId, data.data(), data.size());
+}
+
+#ifdef PDAL_HAVE_ZSTD
+uint64_t EptReader::readZstandard(PointView& dst, const Key& key,
+        const uint64_t nodeId) const
+{
+    auto compressed(m_ep->getBinary("ept-data/" + key.toString() + ".zst"));
+    std::vector<char> data;
+    pdal::ZstdDecompressor dec([&data](char* pos, std::size_t size)
+    {
+        data.insert(data.end(), pos, pos + size);
+    });
+
+    dec.decompress(compressed.data(), compressed.size());
+    return processPackedData(dst, nodeId, data.data(), data.size());
+}
+#endif
 
 void EptReader::process(PointView& dst, PointRef& pr, const uint64_t nodeId,
         const PointId pointId) const
@@ -828,11 +855,11 @@ void EptReader::process(PointView& dst, PointRef& pr, const uint64_t nodeId,
 
     auto passesPolyFilter = [this](double x, double y)
     {
-        if (m_queryGrids.empty())
+        if (m_args->m_polys.empty())
             return true;
 
-        for (const auto& grid : m_queryGrids)
-            if (grid->inside(x, y))
+        for (Polygon& poly : m_args->m_polys)
+            if (poly.contains(x, y))
                 return true;
         return false;
     };
@@ -929,7 +956,7 @@ struct EptReader::NodeBuffer
 
 void EptReader::load()
 {
-        // Asynchronously trigger the fetching and point-view execution of
+    // Asynchronously trigger the fetching and point-view execution of
     // a lookahead buffer of nodes.
     while (
         m_upcomingNodeBuffers.size() < m_pool->size() &&
@@ -956,8 +983,14 @@ void EptReader::load()
 
             if (m_info->dataType() == EptInfo::DataType::Laszip)
                 readLaszip(nodeBuffer->view, key, nodeId);
-            else
+#ifdef PDAL_HAVE_ZSTD
+            else if (m_info->dataType() == EptInfo::DataType::Zstandard)
+                readZstandard(nodeBuffer->view, key, nodeId);
+#endif
+            else if (m_info->dataType() == EptInfo::DataType::Binary)
                 readBinary(nodeBuffer->view, key, nodeId);
+            else
+                throw ept_error("Unrecognized EPT dataType");
 
             for (const auto& addon : m_addons)
                 readAddon(nodeBuffer->view, key, *addon);
@@ -1007,7 +1040,6 @@ bool EptReader::next()
 
     return true;
 }
-
 
 bool EptReader::processOne(PointRef& point)
 {
