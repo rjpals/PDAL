@@ -42,9 +42,32 @@
 #include <pdal/Streamable.hpp>
 #include <pdal/util/ProgramArgs.hpp>
 
+#include <z5/handle.hxx>
+#include <z5/factory.hxx>
+#include <z5/dataset.hxx>
+#include <z5/metadata.hxx>
+
+
+
 namespace pdal
 {
 
+
+// class Z5Info
+// {
+// public:
+//     z5::filesystem::handle::File* handle;
+//     z5::filesystem::handle::Dataset* dataset;
+//     z5::DatasetMetadata* metadata;
+//
+//     Z5Info() :
+//         handle(nullptr),
+//         dataset(nullptr)
+//     {}
+//
+//     ~Z5Info();
+//
+// };
 
 class PDAL_DLL Z5Reader : public pdal::Reader, public pdal::Streamable
 {
@@ -64,6 +87,13 @@ private:
     virtual point_count_t read(PointViewPtr view, point_count_t num);
     virtual bool processOne(PointRef& point);
     virtual void done(PointTableRef table);
+
+    std::string m_datasetName;
+    std::string m_groupName;
+    z5::filesystem::handle::File* m_file;
+    z5::filesystem::handle::Group* m_group;;
+    z5::filesystem::handle::Dataset* m_dataset;
+    z5::DatasetMetadata* m_metadata;
 
 };
 

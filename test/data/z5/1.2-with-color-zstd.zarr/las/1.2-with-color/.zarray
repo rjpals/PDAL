@@ -1,0 +1,73 @@
+{
+    "chunks": [
+        1065
+    ],
+    "compressor": {
+        "blocksize": 0,
+        "clevel": 5,
+        "cname": "lz4",
+        "id": "blosc",
+        "shuffle": 1
+    },
+    "dtype": [
+        [
+            "X",
+            "<i4"
+        ],
+        [
+            "Y",
+            "<i4"
+        ],
+        [
+            "Z",
+            "<i4"
+        ],
+        [
+            "intensity",
+            "<u2"
+        ],
+        [
+            "flag_byte",
+            "|u1"
+        ],
+        [
+            "raw_classification",
+            "|u1"
+        ],
+        [
+            "scan_angle_rank",
+            "|i1"
+        ],
+        [
+            "user_data",
+            "|u1"
+        ],
+        [
+            "pt_src_id",
+            "<u2"
+        ],
+        [
+            "gps_time",
+            "<f8"
+        ],
+        [
+            "red",
+            "<u2"
+        ],
+        [
+            "green",
+            "<u2"
+        ],
+        [
+            "blue",
+            "<u2"
+        ]
+    ],
+    "fill_value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    "filters": null,
+    "order": "C",
+    "shape": [
+        1065
+    ],
+    "zarr_format": 2
+}

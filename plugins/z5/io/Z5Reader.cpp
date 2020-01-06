@@ -37,10 +37,18 @@
 
 #include <pdal/util/ProgramArgs.hpp>
 #include <pdal/PDALUtils.hpp>
-#include <z5/file.hxx>
 
+#include <z5/factory.hxx>
 namespace pdal
 {
+
+
+// Z5Info::~Z5Info()
+// {
+//         if (handle)
+//             delete handle;
+// }
+
 
 static PluginInfo const s_info
 {
@@ -56,7 +64,8 @@ std::string Z5Reader::getName() const { return s_info.name; }
 
 void Z5Reader::addArgs(ProgramArgs& args)
 {
-//     args.add("rdtp", "", m_isRdtp, DEFAULT_IS_RDTP);
+    args.add("dataset", "Zarr dataset name", m_datasetName, "");
+    args.add("group", "Zarr dataset name", m_groupName, "");
 //     args.add("sync_to_pps", "Sync to PPS", m_syncToPps, DEFAULT_SYNC_TO_PPS);
 //     args.add("reflectance_as_intensity", "Reflectance as intensity", m_reflectanceAsIntensity, DEFAULT_REFLECTANCE_AS_INTENSITY);
 //     args.add("min_reflectance", "Minimum reflectance", m_minReflectance, DEFAULT_MIN_REFLECTANCE);
@@ -65,8 +74,21 @@ void Z5Reader::addArgs(ProgramArgs& args)
 
 void Z5Reader::initialize()
 {
-    if (pdal::Utils::isRemote(m_filename))
-        m_filename = pdal::Utils::fetchRemote(m_filename);
+    m_file = new z5::filesystem::handle::File(m_filename); //, z5::FileMode::r);
+    if (!m_file->isZarr())
+        throw pdal_error("File '" + m_filename +"' is not a Zarr!");
+
+    m_group = new z5::filesystem::handle::Group(*m_file, m_groupName);
+    if (!m_group->exists())
+        throw pdal_error("Group '" + m_groupName +
+                         "' does not exist in the '" +
+                         m_filename + "' Zarr");
+    m_dataset = new z5::filesystem::handle::Dataset(*m_group, m_datasetName);
+    if (!m_dataset->exists())
+        throw pdal_error("Dataset '" + m_datasetName+
+                         "' does not exist in the '" +
+                         m_groupName + "' group");
+    z5::filesystem::readMetadata(*m_dataset, *m_metadata);
 }
 
 
@@ -96,7 +118,7 @@ point_count_t Z5Reader::read(PointViewPtr view, point_count_t num)
 
 bool Z5Reader::processOne(PointRef& point)
 {
-//     return m_pointcloud->readOne(point);
+    return false;
     return true;
 }
 

@@ -39,18 +39,68 @@
 #include <pdal/Options.hpp>
 #include <pdal/PipelineManager.hpp>
 #include <pdal/PointView.hpp>
+#include <pdal/StageFactory.hpp>
 
 #include "Z5Reader.hpp"
 #include "Config.hpp"
+#include "Support.hpp"
 
 using namespace pdal;
 
-Options defaultZ5ReaderOptions()
+TEST(Z5ReaderTest, Z5ReaderTest_bad_file)
 {
-    Options options;
-    Option filename("filename", testDataPath() + "130501_232206_cut.rxp");
-    options.add(filename);
-    return options;
+    StageFactory f;
+
+    Options ops;
+    ops.add("filename", Support::datapath("z5/bad.zarr"));
+
+    Z5Reader reader;
+    reader.setOptions(ops);
+
+    PointTable table;
+
+    EXPECT_THROW( reader.prepare( table), pdal::pdal_error);
+}
+
+TEST(Z5ReaderTest, Z5ReaderTest_bad_group)
+{
+    StageFactory f;
+
+    Options ops;
+    ops.add("filename", Support::datapath("z5/bad.zarr"));
+    ops.add("group", "broken");
+
+    Z5Reader reader;
+    reader.setOptions(ops);
+
+    PointTable table;
+
+    EXPECT_THROW( reader.prepare( table), pdal::pdal_error);
+}
+TEST(Z5ReaderTest, Z5ReaderTest_read_fields)
+{
+    StageFactory f;
+
+    Options ops;
+    ops.add("filename", Support::datapath("z5/1.2-with-color-zstd.zarr"));
+    ops.add("group", "las");
+    ops.add("dataset", "1.2-with-color");
+
+    Z5Reader reader;
+    reader.setOptions(ops);
+
+    PointTable table;
+
+    reader.prepare(table);
+    PointViewSet viewSet = reader.execute(table);
+    EXPECT_EQ(viewSet.size(), 1u);
+    PointViewPtr view = *viewSet.begin();
+    EXPECT_EQ(view->size(), 1065u);
+    EXPECT_EQ(view->layout()->pointSize(), 34u);
+
+    EXPECT_EQ(view->getFieldAs<int16_t>(pdal::Dimension::Id::Intensity,800),
+        49);
+    EXPECT_EQ(view->getFieldAs<int32_t>(pdal::Dimension::Id::X,400), 63679039);
 }
 
 // template <typename T>

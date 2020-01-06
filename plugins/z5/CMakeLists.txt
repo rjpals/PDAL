@@ -22,7 +22,7 @@ if (BUILD_Z5_TESTS)
         "${CMAKE_CURRENT_BINARY_DIR}/test/Config.hpp"
     )
 
-    PDAL_ADD_TEST(${Z5_TEST_NAME}
+    PDAL_ADD_TEST(pdal_io_z5_test
         FILES
             test/Z5ReaderTest.cpp
         LINK_WITH
